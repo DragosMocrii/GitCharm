@@ -3,6 +3,9 @@ import type { CommitFilters } from '../store/logStore';
 import type { CompareRange } from '../../../host/types/messages';
 import type { BranchInfo, RepoMeta, TagInfo } from '../../shared/types';
 import { Codicon } from '../../shared/Codicon';
+import * as l10n from '@vscode/l10n';
+import { locale } from '../../shared/l10n';
+import { isImeComposing } from '../../shared/ime';
 
 interface Props {
   filters: CommitFilters;
@@ -10,13 +13,8 @@ interface Props {
   tags: TagInfo[];
   repos: RepoMeta[];
   onFilterChange: (key: keyof CommitFilters, value: string) => void;
-  onRepoChange: (repoId: string | null) => void;
   onCompareChange: (compare: CompareRange | null) => void;
   onClear: () => void;
-  onFetchAll: () => void;
-  onUndock?: (target: 'editorTab' | 'newWindow' | 'pick') => void;
-  /** When true, hides the Undock menu item (already in undocked mode). */
-  hideUndock?: boolean;
 }
 
 function useIsLightTheme() {
@@ -29,7 +27,7 @@ function useIsLightTheme() {
   return light;
 }
 
-export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChange, onRepoChange, onCompareChange, onClear, onFetchAll, onUndock, hideUndock }: Props) {
+export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChange, onCompareChange, onClear }: Props) {
   const isLight = useIsLightTheme();
   useEffect(() => {
     const id = 'gitcharm-filter-field-focus';
@@ -45,42 +43,12 @@ export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChang
 
   const hasFilters = !!(filters.text || filters.author || filters.branch || filters.dateFrom || filters.dateTo || filters.compare);
 
-  useEffect(() => {
-    if (repos.length <= 1) return;
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (!(event.altKey && (event.ctrlKey || event.metaKey))) return;
-
-      let nextRepoId: string | null | undefined;
-      if (event.key === '0') {
-        nextRepoId = null;
-      } else if (/^[1-9]$/.test(event.key)) {
-        nextRepoId = repos[Number(event.key) - 1]?.id;
-      } else if (event.key === '[' || event.key === ']') {
-        const currentIndex = filters.repoId
-          ? repos.findIndex(repo => repo.id === filters.repoId)
-          : -1;
-        const options: Array<string | null> = [null, ...repos.map(repo => repo.id)];
-        const optionIndex = currentIndex + 1;
-        const delta = event.key === '[' ? -1 : 1;
-        nextRepoId = options[(optionIndex + delta + options.length) % options.length];
-      }
-
-      if (nextRepoId === undefined || nextRepoId === filters.repoId) return;
-      event.preventDefault();
-      onRepoChange(nextRepoId);
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [filters.repoId, onRepoChange, repos]);
-
   return (
     <div style={styles.bar}>
         {/* Search */}
         <DebouncedInput
           value={filters.text}
-          placeholder="Search commits…"
+          placeholder={l10n.t('Search commits…')}
           icon="search"
           onChange={v => onFilterChange('text', v)}
           debounceMs={600}
@@ -89,7 +57,7 @@ export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChang
         {/* Author */}
         <DebouncedInput
           value={filters.author}
-          placeholder="Author…"
+          placeholder={l10n.t('Author…')}
           icon="person"
           onChange={v => onFilterChange('author', v)}
           debounceMs={600}
@@ -120,7 +88,7 @@ export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChang
               data-top-action-btn=""
               style={styles.compareBtn}
               onClick={() => onCompareChange({ base: '', target: '' })}
-              title="Compare branches"
+              title={l10n.t('Compare branches')}
             >
               <Codicon name="git-compare" style={{ fontSize: '15px' }} />
             </button>
@@ -137,13 +105,10 @@ export function CommitFiltersBar({ filters, branches, tags, repos, onFilterChang
         />
 
         {hasFilters && (
-          <button data-top-action-btn="" style={styles.clearBtn} onClick={onClear} title="Clear all filters">
+          <button data-top-action-btn="" style={styles.clearBtn} onClick={onClear} title={l10n.t('Clear all filters')}>
             <Codicon name="clear-all" style={{ fontSize: '15px' }} />
           </button>
         )}
-
-        {/* More menu — pushed to the right */}
-        <MoreMenu onFetchAll={onFetchAll} onUndock={onUndock} hideUndock={hideUndock} />
       </div>
   );
 }
@@ -160,72 +125,9 @@ export function compareLabels(compare: CompareRange, repos: RepoMeta[]): { targe
   const defaultName = names.size === 1 && !names.has('') ? [...names][0] : null;
   return {
     target: compare.target || 'HEAD',
-    base: compare.base || defaultName || 'the default branch',
+    base: compare.base || defaultName || l10n.t('the default branch'),
     defaultName,
   };
-}
-
-/* ─── MoreMenu ────────────────────────────────────────────────────────────── */
-
-function MoreMenu({ onFetchAll, onUndock, hideUndock }: {
-  onFetchAll: () => void;
-  onUndock?: (target: 'editorTab' | 'newWindow' | 'pick') => void;
-  hideUndock?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function onOut(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    const onBlur = () => setOpen(false);
-    if (open) {
-      document.addEventListener('mousedown', onOut);
-      window.addEventListener('blur', onBlur);
-    }
-    return () => {
-      document.removeEventListener('mousedown', onOut);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, [open]);
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0, marginLeft: 'auto' }}>
-      <button
-        data-top-action-btn=""
-        style={styles.moreBtn}
-        onClick={() => setOpen(o => !o)}
-        title="More actions"
-      >
-        <Codicon name="three-bars" style={{ fontSize: '14px' }} />
-      </button>
-      {open && (
-        <div style={styles.moreDropdown}>
-          <div
-            style={styles.moreItem}
-            onClick={() => { onFetchAll(); setOpen(false); }}
-          >
-            <Codicon name="sync" style={{ fontSize: '13px', opacity: 0.7 }} />
-            <span>Fetch and Refresh</span>
-          </div>
-
-          {!hideUndock && (
-            <>
-              <div style={styles.moreSeparator} />
-              <div
-                style={styles.moreItem}
-                onClick={() => { onUndock?.('pick'); setOpen(false); }}
-              >
-                <Codicon name="multiple-windows" style={{ fontSize: '13px', opacity: 0.7 }} />
-                <span>Undock…</span>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
 }
 
 /* ─── DebouncedInput ──────────────────────────────────────────────────────── */
@@ -253,6 +155,7 @@ function DebouncedInput({ value, placeholder, icon, onChange, width, maxWidth: _
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (isImeComposing(e)) return;
     if (e.key === 'Escape') { handleChange(''); e.currentTarget.blur(); }
     if (e.key === 'Enter' && !local.trim()) { handleChange(''); }
   }
@@ -308,7 +211,7 @@ function CompareControls({ compare, branches, tags, repos, reposInView, isLight,
   onChange: (compare: CompareRange | null) => void;
 }) {
   const { defaultName } = compareLabels(compare, reposInView);
-  const baseDefaultLabel = defaultName ? `Default branch (${defaultName})` : 'Default branch';
+  const baseDefaultLabel = defaultName ? l10n.t('Default branch ({0})', defaultName) : l10n.t('Default branch');
   return (
     <div style={styles.compareGroup}>
       <BranchTagPicker
@@ -318,11 +221,11 @@ function CompareControls({ compare, branches, tags, repos, reposInView, isLight,
         repos={repos}
         onChange={target => onChange({ ...compare, target })}
         isLight={isLight}
-        allLabel="HEAD (current branch)"
+        allLabel={l10n.t('HEAD (current branch)')}
         placeholder="HEAD"
-        titleText="Show commits on this branch"
+        titleText={l10n.t('Show commits on this branch')}
       />
-      <span style={styles.compareSeparator}>not in</span>
+      <span style={styles.compareSeparator}>{l10n.t('not in')}</span>
       <BranchTagPicker
         value={compare.base}
         branches={branches}
@@ -332,13 +235,13 @@ function CompareControls({ compare, branches, tags, repos, reposInView, isLight,
         isLight={isLight}
         allLabel={baseDefaultLabel}
         placeholder={baseDefaultLabel}
-        titleText="…that aren't on this branch"
+        titleText={l10n.t('…that aren\'t on this branch')}
       />
       <button
         data-top-action-btn=""
         style={styles.compareBtn}
         onClick={() => onChange(null)}
-        title="Exit compare mode"
+        title={l10n.t('Exit compare mode')}
       >
         <Codicon name="close" style={{ fontSize: '14px' }} />
       </button>
@@ -348,7 +251,7 @@ function CompareControls({ compare, branches, tags, repos, reposInView, isLight,
 
 /* ─── BranchTagPicker ─────────────────────────────────────────────────────── */
 
-function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLight, allLabel = 'All branches & tags', placeholder = 'Branch / Tag…', titleText = 'Filter by branch or tag' }: {
+function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLight, allLabel = l10n.t('All branches & tags'), placeholder = l10n.t('Branch / Tag…'), titleText = l10n.t('Filter by branch or tag') }: {
   value: string;
   branches: NamedRef[];
   tags: NamedRef[];
@@ -414,10 +317,10 @@ function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLigh
             <input
               autoFocus
               style={styles.dropdownInput}
-              placeholder="Filter…"
+              placeholder={l10n.t('Filter…')}
               value={query}
               onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
+              onKeyDown={e => { if (isImeComposing(e)) return; if (e.key === 'Escape') setOpen(false); }}
             />
           </div>
           <div style={styles.dropdownList}>
@@ -428,7 +331,7 @@ function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLigh
               <span style={{ opacity: 0.5, fontSize: '12px' }}>{allLabel}</span>
             </div>
             {displayedLocalBranches.length > 0 && (
-              <div style={styles.dropdownGroupLabel}>Local Branches</div>
+              <div style={styles.dropdownGroupLabel}>{l10n.t('Local Branches')}</div>
             )}
             {displayedLocalBranches.map(({ name, repoIds, isRemote }) => (
               <div
@@ -449,7 +352,7 @@ function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLigh
               </div>
             ))}
             {displayedRemoteBranches.length > 0 && (
-              <div style={styles.dropdownGroupLabel}>Remote Branches</div>
+              <div style={styles.dropdownGroupLabel}>{l10n.t('Remote Branches')}</div>
             )}
             {displayedRemoteBranches.map(({ name, repoIds, isRemote }) => (
               <div
@@ -470,7 +373,7 @@ function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLigh
               </div>
             ))}
             {displayedTags.length > 0 && (
-              <div style={styles.dropdownGroupLabel}>Tags</div>
+              <div style={styles.dropdownGroupLabel}>{l10n.t('Tags')}</div>
             )}
             {displayedTags.map(({ name, repoIds }) => (
               <div
@@ -491,7 +394,7 @@ function BranchTagPicker({ value, branches, tags, repos, onChange, width, isLigh
               </div>
             ))}
             {isEmpty && (
-              <div style={styles.dropdownEmpty}>No matches</div>
+              <div style={styles.dropdownEmpty}>{l10n.t('No matches')}</div>
             )}
           </div>
         </div>
@@ -507,20 +410,51 @@ export function RepoTabs({ value, repos, onChange }: {
   repos: RepoMeta[];
   onChange: (repoId: string | null) => void;
 }) {
+  // Ctrl/Cmd+Alt+0…9 and [ / ] switch tab — kept here so they work even with the filters bar hidden.
+  useEffect(() => {
+    if (repos.length <= 1) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.altKey && (event.ctrlKey || event.metaKey))) return;
+
+      let nextRepoId: string | null | undefined;
+      if (event.key === '0') {
+        nextRepoId = null;
+      } else if (/^[1-9]$/.test(event.key)) {
+        nextRepoId = repos[Number(event.key) - 1]?.id;
+      } else if (event.key === '[' || event.key === ']') {
+        const currentIndex = value
+          ? repos.findIndex(repo => repo.id === value)
+          : -1;
+        const options: Array<string | null> = [null, ...repos.map(repo => repo.id)];
+        const optionIndex = currentIndex + 1;
+        const delta = event.key === '[' ? -1 : 1;
+        nextRepoId = options[(optionIndex + delta + options.length) % options.length];
+      }
+
+      if (nextRepoId === undefined || nextRepoId === value) return;
+      event.preventDefault();
+      onChange(nextRepoId);
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [value, onChange, repos]);
+
   if (repos.length <= 1) return null;
 
   return (
-    <div style={styles.repoTabs} role="tablist" aria-label="Repositories">
+    <div style={styles.repoTabs} role="tablist" aria-label={l10n.t('Repositories')}>
       <button
         type="button"
         role="tab"
         aria-selected={value === null}
         style={styles.repoTab(value === null)}
         onClick={() => onChange(null)}
-        title="All repositories (Ctrl/Cmd+Alt+0)"
+        title={l10n.t('All repositories ({0})', 'Ctrl/Cmd+Alt+0')}
       >
         <Codicon name="repo" style={{ fontSize: '12px', opacity: 0.65 }} />
-        <span>All</span>
+        <span>{l10n.t({ message: 'All', comment: ['Repository tab: show commits of all repositories'] })}</span>
       </button>
 
       {repos.map((repo, index) => (
@@ -543,8 +477,30 @@ export function RepoTabs({ value, repos, onChange }: {
 
 /* ─── DateRangePicker ─────────────────────────────────────────────────────── */
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+function monthLabel(year: number, month: number): string {
+  return new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' }).format(new Date(year, month, 1));
+}
+
+/** First weekday of the calendar grid as a Date#getDay() index (Monday for it/zh, Sunday for en). */
+function weekStartDay(): number {
+  try {
+    const loc = new Intl.Locale(locale) as Intl.Locale & {
+      getWeekInfo?: () => { firstDay: number };
+      weekInfo?: { firstDay: number };
+    };
+    const firstDay = loc.getWeekInfo?.().firstDay ?? loc.weekInfo?.firstDay; // 1 = Monday … 7 = Sunday
+    return firstDay ? firstDay % 7 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Short weekday names in grid order, starting from weekStartDay(). */
+function weekdayLabels(start: number): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+  // 2023-01-01 was a Sunday.
+  return Array.from({ length: 7 }, (_, i) => fmt.format(new Date(2023, 0, 1 + start + i)));
+}
 
 function toYMD(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -562,19 +518,20 @@ function CalendarMonth({ year, month, from, to, hovered, onDay, onHover }: {
   onDay: (d: Date) => void;
   onHover: (d: Date | null) => void;
 }) {
-  const firstDay = new Date(year, month, 1).getDay();
+  const weekStart = weekStartDay();
+  const leadingBlanks = (new Date(year, month, 1).getDay() - weekStart + 7) % 7;
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let i = 0; i < leadingBlanks; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
 
   const rangeEnd = hovered ?? to;
 
   return (
     <div style={calStyles.month}>
-      <div style={calStyles.monthTitle}>{MONTHS[month]} {year}</div>
+      <div style={calStyles.monthTitle}>{monthLabel(year, month)}</div>
       <div style={calStyles.grid}>
-        {DAYS.map(d => <div key={d} style={calStyles.dayHeader}>{d}</div>)}
+        {weekdayLabels(weekStart).map((d, i) => <div key={i} style={calStyles.dayHeader}>{d}</div>)}
         {cells.map((date, i) => {
           if (!date) return <div key={`e${i}`} />;
           const ymd = toYMD(date);
@@ -676,7 +633,7 @@ function DateRangePicker({ from, to, isLight, onFromChange, onToChange }: {
         <Codicon name="calendar" style={{ fontSize: '13px', opacity: 0.6, flexShrink: 0 }} />
         {label
           ? <span style={styles.pickerLabelActive}>{label}</span>
-          : <span style={{ ...styles.pickerLabelPlaceholder, opacity: isLight ? 0.8 : 0.4 }}>From → To</span>}
+          : <span style={{ ...styles.pickerLabelPlaceholder, opacity: isLight ? 0.8 : 0.4 }}>{l10n.t('From → To')}</span>}
         {hasRange && (
           <span
             style={{ ...styles.fieldClear, marginLeft: 2 }}
@@ -693,7 +650,7 @@ function DateRangePicker({ from, to, isLight, onFromChange, onToChange }: {
           <div style={calStyles.calCol}>
             <div style={calStyles.navRow}>
               <button style={calStyles.navBtn} onClick={() => navLeft(-1)}><Codicon name="chevron-left" style={{ fontSize: '12px' }} /></button>
-              <span style={calStyles.navLabel}>{MONTHS[leftYM.m]} {leftYM.y}</span>
+              <span style={calStyles.navLabel}>{monthLabel(leftYM.y, leftYM.m)}</span>
               <button style={calStyles.navBtn} onClick={() => navLeft(1)}><Codicon name="chevron-right" style={{ fontSize: '12px' }} /></button>
             </div>
             <CalendarMonth year={leftYM.y} month={leftYM.m} from={fromDate} to={toDate} hovered={hovered} onDay={handleDay} onHover={setHovered} />
@@ -705,7 +662,7 @@ function DateRangePicker({ from, to, isLight, onFromChange, onToChange }: {
           <div style={calStyles.calCol}>
             <div style={calStyles.navRow}>
               <button style={calStyles.navBtn} onClick={() => navRight(-1)}><Codicon name="chevron-left" style={{ fontSize: '12px' }} /></button>
-              <span style={calStyles.navLabel}>{MONTHS[rightYM.m]} {rightYM.y}</span>
+              <span style={calStyles.navLabel}>{monthLabel(rightYM.y, rightYM.m)}</span>
               <button style={calStyles.navBtn} onClick={() => navRight(1)}><Codicon name="chevron-right" style={{ fontSize: '12px' }} /></button>
             </div>
             <CalendarMonth year={rightYM.y} month={rightYM.m} from={fromDate} to={toDate} hovered={hovered} onDay={handleDay} onHover={setHovered} />
@@ -1053,48 +1010,5 @@ const styles = {
     opacity: 0.6,
     whiteSpace: 'nowrap',
     flexShrink: 0,
-  } as React.CSSProperties,
-  moreBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '26px',
-    height: '26px',
-    background: 'none',
-    color: 'var(--vscode-foreground)',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    flexShrink: 0,
-    opacity: 0.7,
-  } as React.CSSProperties,
-  moreDropdown: {
-    position: 'absolute' as const,
-    top: '100%',
-    right: 0,
-    marginTop: '2px',
-    background: 'var(--vscode-menu-background)',
-    border: '1px solid var(--vscode-menu-border, var(--vscode-panel-border))',
-    borderRadius: '4px',
-    padding: '3px 0',
-    minWidth: '140px',
-    zIndex: 1000,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-  } as React.CSSProperties,
-  moreItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '5px 12px',
-    fontSize: '12px',
-    cursor: 'pointer',
-    color: 'var(--vscode-menu-foreground, var(--vscode-foreground))',
-    whiteSpace: 'nowrap' as const,
-    position: 'relative' as const,
-  } as React.CSSProperties,
-  moreSeparator: {
-    height: '1px',
-    background: 'var(--vscode-menu-separatorBackground, var(--vscode-panel-border))',
-    margin: '3px 0',
   } as React.CSSProperties,
 };

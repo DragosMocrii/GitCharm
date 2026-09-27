@@ -12,6 +12,9 @@ import { getVsCodeApi } from '../../shared/vscodeApi';
 import type { LogToHostMsg } from '../../../host/types/messages';
 import { AuthorAvatar } from '../../shared/AuthorAvatar';
 import { formatDateTime, formatDateOnly, formatDateCompact } from '../../shared/dateUtils';
+import * as l10n from '@vscode/l10n';
+import { plural } from '../../shared/l10n';
+import { isImeComposing } from '../../shared/ime';
 
 
 interface Props {
@@ -36,6 +39,8 @@ interface Props {
   activeProfile?: { name: string; gitName: string; gitEmail: string; builtIn?: 'local' | 'global' };
   /** Replaces the default "No commits yet" message, e.g. for an empty compare range. */
   emptyState?: { title: string; subtitle?: string };
+  /** Leave the date column out whatever the width (the hover popover still shows it). */
+  hideDate?: boolean;
 }
 
 interface RepoBlock {
@@ -166,7 +171,7 @@ const ANCHOR_PROBE = 32;
 
 const SKELETON_MIN_MS = 400;
 
-export function CommitList({ layout, selectedHash, repoColors: _repoColors, repos, activeRepoId, currentBranchByRepo, headHashByRepo, onSelect, onMultiSelectionChange, onLoadMore, hasMore, storeHasMore, loading, backgroundLoading, scrollTarget, onScrollTargetHandled, aiEnabled, activeProfile, emptyState }: Props) {
+export function CommitList({ layout, selectedHash, repoColors: _repoColors, repos, activeRepoId, currentBranchByRepo, headHashByRepo, onSelect, onMultiSelectionChange, onLoadMore, hasMore, storeHasMore, loading, backgroundLoading, scrollTarget, onScrollTargetHandled, aiEnabled, activeProfile, emptyState, hideDate }: Props) {
   const { commits, segments, refColors } = layout;
 
   // graphWidth is stable: it only grows, never shrinks, so adding new commits
@@ -478,11 +483,11 @@ export function CommitList({ layout, selectedHash, repoColors: _repoColors, repo
   }
 
   if (commits.length === 0 && !storeHasMore) {
-    const emptySubtitle = emptyState ? emptyState.subtitle : 'Make your first commit to see the history here';
+    const emptySubtitle = emptyState ? emptyState.subtitle : l10n.t('Make your first commit to see the history here');
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, alignSelf: 'stretch', height: '100%', gap: '8px', fontFamily: 'var(--vscode-font-family)', userSelect: 'none' }}>
         <Codicon name={emptyState ? 'git-compare' : 'git-commit'} style={{ fontSize: '32px', opacity: 0.3, color: 'var(--vscode-foreground)' }} />
-        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--vscode-foreground)', opacity: 0.6 }}>{emptyState?.title ?? 'No commits yet'}</span>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--vscode-foreground)', opacity: 0.6 }}>{emptyState?.title ?? l10n.t('No commits yet')}</span>
         {emptySubtitle && (
           <span style={{ fontSize: '12px', color: 'var(--vscode-foreground)', opacity: 0.4 }}>{emptySubtitle}</span>
         )}
@@ -581,7 +586,7 @@ export function CommitList({ layout, selectedHash, repoColors: _repoColors, repo
                   setPopover({ commit, rowTop: rect.top, listRect, mouseX });
                 }, 1000);
               }}
-              onMouseLeave={(e) => {
+              onMouseLeave={() => {
                 if (isHoverSuppressed()) return;
                 setHoveredIndex(null);
                 if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -749,7 +754,7 @@ export function CommitList({ layout, selectedHash, repoColors: _repoColors, repo
                   <button
                     data-log-action-btn=""
                     style={styles.inlineActionBtn}
-                    title="Open Commit Detail"
+                    title={l10n.t('Open Commit Detail')}
                     onClick={e => { e.stopPropagation(); getVsCodeApi().postMessage({ type: 'LOG_OPEN_EXTENDED_DETAIL', repoId: commit.repoId, hash: commit.hash } satisfies LogToHostMsg); }}
                   >
                     <Codicon name="open-preview" style={{ fontSize: '16px', lineHeight: 1 }} />
@@ -757,7 +762,7 @@ export function CommitList({ layout, selectedHash, repoColors: _repoColors, repo
                   <button
                     data-log-action-btn=""
                     style={styles.inlineActionBtn}
-                    title="Open Changes"
+                    title={l10n.t('Open Changes')}
                     onClick={e => { e.stopPropagation(); getVsCodeApi().postMessage({ type: 'LOG_OPEN_COMMIT_CHANGES', repoId: commit.repoId, hash: commit.hash } satisfies LogToHostMsg); }}
                   >
                     <Codicon name="diff-multiple" style={{ fontSize: '16px', lineHeight: 1 }} />
@@ -765,16 +770,16 @@ export function CommitList({ layout, selectedHash, repoColors: _repoColors, repo
                 </div>
               )}
               {commit.incoming && (
-                <Codicon name="arrow-down" style={styles.incomingIcon} title="Not pulled" />
+                <Codicon name="arrow-down" style={styles.incomingIcon} title={l10n.t('Not pulled')} />
               )}
               {commit.unpushed && (
-                <Codicon name="arrow-up" style={styles.unpushedIcon} title="Not pushed" />
+                <Codicon name="arrow-up" style={styles.unpushedIcon} title={l10n.t('Not pushed')} />
               )}
               <div style={containerWidth > 550 ? styles.metaWithAuthor : styles.meta}>
-                <AuthorAvatar authorName={commit.isStash ? (activeProfile?.gitName ?? 'You') : commit.authorName} authorEmail={commit.isStash ? (activeProfile?.gitEmail ?? '') : commit.authorEmail} size={20} isYou={commit.isStash && !activeProfile} />
-                {containerWidth > 550 && <span style={styles.author}>{formatAuthorName(commit.isStash ? (activeProfile?.gitName ?? 'You') : commit.authorName)}</span>}
+                <AuthorAvatar authorName={commit.isStash ? (activeProfile?.gitName ?? l10n.t('You')) : commit.authorName} authorEmail={commit.isStash ? (activeProfile?.gitEmail ?? '') : commit.authorEmail} size={20} isYou={commit.isStash && !activeProfile} />
+                {containerWidth > 550 && <span style={styles.author}>{formatAuthorName(commit.isStash ? (activeProfile?.gitName ?? l10n.t('You')) : commit.authorName)}</span>}
               </div>
-              {containerWidth > 330 && (
+              {!hideDate && containerWidth > 330 && (
                 <span style={styles.date}>
                   {containerWidth > 550 ? formatDateTime(commit.authorDate) : containerWidth > 380 ? formatDateOnly(commit.authorDate) : formatDateCompact(commit.authorDate)}
                 </span>
@@ -937,8 +942,8 @@ function CommitPopover({ commit, rowTop, listRect, mouseX, onClose, popoverHover
 
       {/* Author + date */}
       <div style={popoverStyles.row}>
-        <AuthorAvatar authorName={commit.isStash ? (activeProfile?.gitName ?? 'You') : commit.authorName} authorEmail={commit.isStash ? (activeProfile?.gitEmail ?? '') : commit.authorEmail} size={16} isYou={commit.isStash && !activeProfile} />
-        <span style={popoverStyles.author}>{commit.isStash ? (activeProfile?.gitName ?? 'You') : commit.authorName}</span>
+        <AuthorAvatar authorName={commit.isStash ? (activeProfile?.gitName ?? l10n.t('You')) : commit.authorName} authorEmail={commit.isStash ? (activeProfile?.gitEmail ?? '') : commit.authorEmail} size={16} isYou={commit.isStash && !activeProfile} />
+        <span style={popoverStyles.author}>{commit.isStash ? (activeProfile?.gitName ?? l10n.t('You')) : commit.authorName}</span>
         <span style={popoverStyles.dot}>·</span>
         <span style={popoverStyles.date}>{formatDateTime(commit.authorDate)}</span>
       </div>
@@ -947,7 +952,7 @@ function CommitPopover({ commit, rowTop, listRect, mouseX, onClose, popoverHover
       <div style={popoverStyles.row}>
         <Codicon name="diff" style={popoverStyles.icon} />
         <span style={popoverStyles.statText}>
-          {stats.files} file{stats.files !== 1 ? 's' : ''} changed
+          {plural(stats.files, l10n.t('1 file changed'), l10n.t('{0} files changed', stats.files))}
         </span>
         {stats.added > 0 && <span style={popoverStyles.added}>+{stats.added}</span>}
         {stats.removed > 0 && <span style={popoverStyles.removed}>-{stats.removed}</span>}
@@ -985,7 +990,7 @@ function CommitPopover({ commit, rowTop, listRect, mouseX, onClose, popoverHover
         );
       })()}
 
-      <div style={popoverStyles.hint}>Click for more details</div>
+      <div style={popoverStyles.hint}>{l10n.t('Click for more details')}</div>
     </div>,
     document.body
   );
@@ -1139,7 +1144,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
     const onMouseDown = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
     };
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKeyDown = (e: KeyboardEvent) => { if (isImeComposing(e)) return; if (e.key === 'Escape') onClose(); };
     window.addEventListener('blur', onBlur);
     document.addEventListener('mousedown', onMouseDown, true);
     document.addEventListener('keydown', onKeyDown);
@@ -1203,31 +1208,31 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
       <>
         <div style={ctxStyles.backdrop} onClick={onClose} />
         <div ref={menuRef} style={ctxStyles.menu(menuPos.left, menuPos.top, menuPos.maxHeight)}>
-          <div style={ctxStyles.header}>{multiSelected.length} commits selected</div>
+          <div style={ctxStyles.header}>{plural(multiSelected.length, l10n.t('1 commit selected'), l10n.t('{0} commits selected', multiSelected.length))}</div>
           <div style={ctxStyles.separator} />
           {!hasStashInMulti && (
             <>
               <div data-ctx-item="" style={ctxStyles.item} onClick={() => send({ type: 'LOG_VIEW_COMBINED_DIFF', repoId, hashes: multiSelected.map(c => c.hash) })}>
                 <Codicon name="diff-multiple" style={ctxStyles.icon} />
-                <span>View Combined Diff</span>
+                <span>{l10n.t('View Combined Diff')}</span>
               </div>
               <div style={ctxStyles.separator} />
               <div data-ctx-item="" style={ctxStyles.item} onClick={() => send({ type: 'LOG_CREATE_PATCH_MULTI', requestId: generateId(), repoId, hashes: multiSelected.map(c => c.hash) })}>
                 <Codicon name="diff" style={ctxStyles.icon} />
-                <span>Create Patch...</span>
+                <span>{l10n.t('Create Patch...')}</span>
               </div>
               <div data-ctx-item="" style={ctxStyles.item} onClick={() => send({ type: 'LOG_CHERRY_PICK_MULTI', requestId: generateId(), repoId, hashes: sortedOldestFirst.map(c => c.hash) })}>
                 <Codicon name="git-commit" style={ctxStyles.icon} />
-                <span>Cherry-Pick All</span>
+                <span>{l10n.t('Cherry-Pick All')}</span>
               </div>
               <div style={ctxStyles.separator} />
               <div style={ctxStyles.itemDisabled}>
                 <Codicon name="history" style={ctxStyles.icon} />
-                <span>Reset Current Branch to Here</span>
+                <span>{l10n.t('Reset Current Branch to Here')}</span>
               </div>
               <div data-ctx-item="" style={ctxStyles.item} onClick={() => send({ type: 'LOG_REVERT_COMMITS', requestId: generateId(), repoId, hashes: sortedNewestFirst.map(c => c.hash) })}>
                 <Codicon name="discard" style={ctxStyles.icon} />
-                <span>Revert Commits</span>
+                <span>{l10n.t('Revert Commits')}</span>
               </div>
               {allUnpushed && (
                 <>
@@ -1237,11 +1242,11 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                     onClick={() => send({ type: 'LOG_DROP_COMMITS', requestId: generateId(), repoId, hashes: multiSelected.map(c => c.hash), oldestHash })}
                   >
                     <Codicon name="trash" style={ctxStyles.icon} />
-                    <span>Drop Commits</span>
+                    <span>{l10n.t('Drop Commits')}</span>
                   </div>
                   <div data-ctx-item="" style={ctxStyles.item} onClick={() => onSquash(multiSelected)}>
                     <Codicon name="fold-down" style={ctxStyles.icon} />
-                    <span>Squash {multiSelected.length} Commits...</span>
+                    <span>{plural(multiSelected.length, l10n.t('Squash 1 Commit...'), l10n.t('Squash {0} Commits...', multiSelected.length))}</span>
                   </div>
                 </>
               )}
@@ -1249,7 +1254,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
           )}
           {hasStashInMulti && (
             <div style={{ ...ctxStyles.header, opacity: 0.45, fontSize: '11px' }}>
-              Mixed selection — no actions available
+              {l10n.t('Mixed selection — no actions available')}
             </div>
           )}
         </div>
@@ -1266,7 +1271,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
       >
         <div data-ctx-item="" style={ctxStyles.item} onClick={copyHash}>
           <Codicon name="copy" style={ctxStyles.icon} />
-          <span>Copy Revision Number</span>
+          <span>{l10n.t('Copy Revision Number')}</span>
         </div>
         <div style={ctxStyles.separator} />
         <div
@@ -1281,7 +1286,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
           }
         >
           <Codicon name="open-preview" style={ctxStyles.icon} />
-          <span>Open Full Detail</span>
+          <span>{l10n.t('Open Full Detail')}</span>
         </div>
         <div
           data-ctx-item=""
@@ -1295,7 +1300,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
           }
         >
           <Codicon name="diff-multiple" style={ctxStyles.icon} />
-          <span>Open Changes</span>
+          <span>{l10n.t('Open Changes')}</span>
         </div>
         {!commit.isStash && (
           <div
@@ -1310,7 +1315,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
             }
           >
             <Codicon name="git-compare" style={ctxStyles.icon} />
-            <span>Compare with…</span>
+            <span>{l10n.t('Compare with…')}</span>
           </div>
         )}
         {aiEnabled && (
@@ -1326,7 +1331,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
             }
           >
             <Codicon name="sparkle" style={ctxStyles.icon} />
-            <span>Explain with AI</span>
+            <span>{l10n.t('Explain with AI')}</span>
           </div>
         )}
         {commit.isStash ? (
@@ -1345,7 +1350,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="git-stash-pop" style={ctxStyles.icon} />
-              <span>Pop Stash</span>
+              <span>{l10n.t('Pop Stash')}</span>
             </div>
             <div
               data-ctx-item=""
@@ -1360,7 +1365,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="git-stash-apply" style={ctxStyles.icon} />
-              <span>Apply Stash</span>
+              <span>{l10n.t('Apply Stash')}</span>
             </div>
             <div style={ctxStyles.separator} />
             <div
@@ -1379,7 +1384,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="trash" style={ctxStyles.icon} />
-              <span>Delete Stash</span>
+              <span>{l10n.t('Delete Stash')}</span>
             </div>
           </>
         ) : (
@@ -1398,7 +1403,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="git-branch" style={ctxStyles.icon} />
-              <span>New Branch...</span>
+              <span>{l10n.t('New Branch...')}</span>
             </div>
             {tagsFromRefs.length === 0 ? (
               <div
@@ -1414,7 +1419,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                 }
               >
                 <Codicon name="tag" style={ctxStyles.icon} />
-                <span>New Tag...</span>
+                <span>{l10n.t('New Tag...')}</span>
               </div>
             ) : (
               <div
@@ -1432,7 +1437,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                 }}
               >
                 <Codicon name="tag" style={ctxStyles.icon} />
-                <span>Manage Tags...</span>
+                <span>{l10n.t('Manage Tags...')}</span>
               </div>
             )}
             <div style={ctxStyles.separator} />
@@ -1451,7 +1456,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                 }
               >
                 <Codicon name="arrow-right" style={ctxStyles.icon} />
-                <span>Checkout...</span>
+                <span>{l10n.t('Checkout...')}</span>
               </div>
             ) : (
               <div
@@ -1467,7 +1472,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                 }
               >
                 <Codicon name="arrow-right" style={ctxStyles.icon} />
-                <span>Checkout Revision</span>
+                <span>{l10n.t('Checkout Revision')}</span>
               </div>
             )}
             {primaryBranch && (
@@ -1483,7 +1488,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                 }
               >
                 <Codicon name="git-branch" style={ctxStyles.icon} />
-                <span>Branch options...</span>
+                <span>{l10n.t('Branch options...')}</span>
               </div>
             )}
             <div style={ctxStyles.separator} />
@@ -1500,7 +1505,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="diff" style={ctxStyles.icon} />
-              <span>Create Patch...</span>
+              <span>{l10n.t('Create Patch...')}</span>
             </div>
             <div
               data-ctx-item=""
@@ -1515,7 +1520,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="git-commit" style={ctxStyles.icon} />
-              <span>Cherry-Pick</span>
+              <span>{l10n.t('Cherry-Pick')}</span>
             </div>
             <div style={ctxStyles.separator} />
             <div
@@ -1530,7 +1535,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="history" style={ctxStyles.icon} />
-              <span>Reset Current Branch to Here...</span>
+              <span>{l10n.t('Reset Current Branch to Here...')}</span>
             </div>
             <div
               data-ctx-item=""
@@ -1545,7 +1550,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
               }
             >
               <Codicon name="discard" style={ctxStyles.icon} />
-              <span>Revert Commit</span>
+              <span>{l10n.t('Revert Commit')}</span>
             </div>
             {commit.unpushed && isHead && (
               <>
@@ -1564,7 +1569,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                   }
                 >
                   <Codicon name="edit" style={ctxStyles.icon} />
-                  <span>Edit Commit Message</span>
+                  <span>{l10n.t('Edit Commit Message')}</span>
                 </div>
                 <div
                   data-ctx-item=""
@@ -1578,7 +1583,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                   }
                 >
                   <Codicon name="arrow-left" style={ctxStyles.icon} />
-                  <span>Undo Commit</span>
+                  <span>{l10n.t('Undo Commit')}</span>
                 </div>
               </>
             )}
@@ -1601,7 +1606,7 @@ function CommitContextMenu({ commit, x, y, multiSelected, allCommits, currentBra
                   }
                 >
                   <Codicon name="trash" style={ctxStyles.icon} />
-                  <span>Drop Commit</span>
+                  <span>{l10n.t('Drop Commit')}</span>
                 </div>
               </>
             )}
@@ -1722,12 +1727,12 @@ function remoteLabel(group: RefGroup): string {
 }
 
 function badgeTitle(group: RefGroup): string {
-  if (group.isRemoteHead) return `Remote HEAD (${group.remoteName}/HEAD)`;
-  if (group.isDetached && group.isHead) return 'HEAD (detached)';
-  if (group.isTag) return group.isDetached ? `Tag: ${group.label} (HEAD)` : `Tag: ${group.label}`;
-  if (group.isLocal && group.isRemote) return `Local & remote: ${group.label}`;
-  if (group.isRemote) return `Remote: ${remoteLabel(group)}`;
-  return `Local: ${group.label}`;
+  if (group.isRemoteHead) return l10n.t('Remote HEAD ({0})', `${group.remoteName}/HEAD`);
+  if (group.isDetached && group.isHead) return l10n.t('HEAD (detached)');
+  if (group.isTag) return group.isDetached ? l10n.t('Tag: {0} (HEAD)', group.label) : l10n.t('Tag: {0}', group.label);
+  if (group.isLocal && group.isRemote) return l10n.t('Local & remote: {0}', group.label);
+  if (group.isRemote) return l10n.t('Remote: {0}', remoteLabel(group));
+  return l10n.t('Local: {0}', group.label);
 }
 
 function badgeColor(group: RefGroup, repoId: string, refColors?: Map<string, string>): string {
